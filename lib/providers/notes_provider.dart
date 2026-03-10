@@ -3,28 +3,40 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../models/note.dart';
 
+enum SortOption { newest, oldest, titleAZ, titleZA }
+
 class NotesProvider with ChangeNotifier {
   final Box<Note> _notesBox = Hive.box<Note>('notes_box');
   List<Note> _notes = [];
   String _searchQuery = '';
+  SortOption _sortOption = SortOption.newest;
 
   NotesProvider() {
     _loadNotes();
   }
 
+  SortOption get sortOption => _sortOption;
+
   List<Note> get allNotes {
-    if (_searchQuery.isEmpty) return _notes;
-    
-    final query = _searchQuery.toLowerCase();
-    return _notes.where((note) {
-      return note.title.toLowerCase().contains(query) || 
-             note.content.toLowerCase().contains(query);
-    }).toList();
+    List<Note> active =
+        _notes.where((n) => !n.isArchived).toList();
+
+    if (_searchQuery.isNotEmpty) {
+      final query = _searchQuery.toLowerCase();
+      active = active
+          .where((note) =>
+              note.title.toLowerCase().contains(query) ||
+              note.content.toLowerCase().contains(query) ||
+              note.tags.any((t) => t.toLowerCase().contains(query)))
+          .toList();
+    }
+
+    return active;
   }
 
-  List<Note> get pinnedNotes => allNotes.where((n) => n.isPinned && !n.isArchived).toList();
-  List<Note> get unpinnedNotes => allNotes.where((n) => !n.isPinned && !n.isArchived).toList();
-  List<Note> get archivedNotes => allNotes.where((n) => n.isArchived).toList();
+  List<Note> get pinnedNotes => allNotes.where((n) => n.isPinned).toList();
+  List<Note> get unpinnedNotes => allNotes.where((n) => !n.isPinned).toList();
+  List<Note> get archivedNotes => _notes.where((n) => n.isArchived).toList();
 
   void _loadNotes() {
     _notes = _notesBox.values.toList();
@@ -33,7 +45,28 @@ class NotesProvider with ChangeNotifier {
   }
 
   void _sortNotes() {
-    _notes.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+    switch (_sortOption) {
+      case SortOption.newest:
+        _notes.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+        break;
+      case SortOption.oldest:
+        _notes.sort((a, b) => a.modifiedAt.compareTo(b.modifiedAt));
+        break;
+      case SortOption.titleAZ:
+        _notes.sort((a, b) =>
+            a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+        break;
+      case SortOption.titleZA:
+        _notes.sort((a, b) =>
+            b.title.toLowerCase().compareTo(a.title.toLowerCase()));
+        break;
+    }
+  }
+
+  void setSort(SortOption option) {
+    _sortOption = option;
+    _sortNotes();
+    notifyListeners();
   }
 
   void search(String query) {
@@ -41,7 +74,8 @@ class NotesProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> addNote(String title, String content, Color color, List<String> tags) async {
+  Future<void> addNote(
+      String title, String content, Color color, List<String> tags) async {
     final note = Note(
       id: const Uuid().v4(),
       title: title,
@@ -57,7 +91,8 @@ class NotesProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> updateNote(String id, String title, String content, Color color, List<String> tags) async {
+  Future<void> updateNote(String id, String title, String content, Color color,
+      List<String> tags) async {
     final noteIndex = _notes.indexWhere((n) => n.id == id);
     if (noteIndex != -1) {
       final note = _notes[noteIndex];
@@ -66,7 +101,6 @@ class NotesProvider with ChangeNotifier {
       note.colorValue = color.value;
       note.tags = tags;
       note.modifiedAt = DateTime.now();
-      
       await _notesBox.put(id, note);
       _sortNotes();
       notifyListeners();
@@ -88,6 +122,8 @@ class NotesProvider with ChangeNotifier {
     if (noteIndex != -1) {
       final note = _notes[noteIndex];
       note.isArchived = !note.isArchived;
+      // De-pin when archiving
+      if (note.isArchived) note.isPinned = false;
       await _notesBox.put(id, note);
       notifyListeners();
     }
