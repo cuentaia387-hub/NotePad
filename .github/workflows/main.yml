@@ -20,6 +20,15 @@ jobs:
         with:
           flutter-version: '3.x'
 
+      # Guardamos nuestro código fuente
+      - run: cp -r lib /tmp/my_lib && cp pubspec.yaml /tmp/my_pubspec.yaml
+
+      # Generamos la estructura de proyecto Android completa
+      - run: flutter create --project-name notepad_glassmorphism .
+
+      # Restauramos nuestro código y pubspec originales
+      - run: rm -rf lib && cp -r /tmp/my_lib lib && cp /tmp/my_pubspec.yaml pubspec.yaml
+
       - run: flutter pub get
       - run: flutter build apk --release
 
