@@ -5,6 +5,7 @@ import '../models/note.dart';
 import '../providers/notes_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/glass_toast.dart';
 
 class EditNoteScreen extends StatefulWidget {
   final Note? note;
@@ -22,6 +23,10 @@ class _EditNoteScreenState extends State<EditNoteScreen> {
   late List<String> _tags;
   final TextEditingController _tagController = TextEditingController();
 
+  // Historial de deshacer
+  final List<String> _undoHistory = [];
+  bool _isUndoing = false;
+
   int get _wordCount => _contentController.text.trim().isEmpty
       ? 0
       : _contentController.text.trim().split(RegExp(r'\s+')).length;
@@ -35,7 +40,14 @@ class _EditNoteScreenState extends State<EditNoteScreen> {
     _contentController = TextEditingController(text: widget.note?.content ?? '');
     _selectedColor = widget.note?.color ?? AppTheme.noteColors[0];
     _tags = List<String>.from(widget.note?.tags ?? []);
-    _contentController.addListener(() => setState(() {}));
+
+    _contentController.addListener(() {
+      setState(() {});
+      if (!_isUndoing) {
+        _undoHistory.add(_contentController.text);
+        if (_undoHistory.length > 50) _undoHistory.removeAt(0);
+      }
+    });
   }
 
   @override
@@ -44,6 +56,19 @@ class _EditNoteScreenState extends State<EditNoteScreen> {
     _contentController.dispose();
     _tagController.dispose();
     super.dispose();
+  }
+
+  void _undo() {
+    if (_undoHistory.length >= 2) {
+      _undoHistory.removeLast();
+      _isUndoing = true;
+      final prev = _undoHistory.last;
+      _contentController.value = TextEditingValue(
+        text: prev,
+        selection: TextSelection.collapsed(offset: prev.length),
+      );
+      _isUndoing = false;
+    }
   }
 
   void _saveNote() {
@@ -66,17 +91,16 @@ class _EditNoteScreenState extends State<EditNoteScreen> {
     Navigator.pop(context);
   }
 
-  void _shareNote() {
+  void _copyNote() {
     final title = _titleController.text.trim();
     final content = _contentController.text.trim();
     final text = title.isNotEmpty ? '$title\n\n$content' : content;
     Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Nota copiada al portapapeles'),
-        backgroundColor: AppTheme.neonAccent,
-        behavior: SnackBarBehavior.floating,
-      ),
+    GlassToast.show(
+      context,
+      message: 'Nota copiada al portapapeles',
+      icon: Icons.copy_all_outlined,
+      iconColor: AppTheme.neonAccent,
     );
   }
 
@@ -91,9 +115,7 @@ class _EditNoteScreenState extends State<EditNoteScreen> {
   }
 
   void _removeTag(String tag) {
-    setState(() {
-      _tags.remove(tag);
-    });
+    setState(() => _tags.remove(tag));
   }
 
   @override
@@ -108,11 +130,22 @@ class _EditNoteScreenState extends State<EditNoteScreen> {
           onPressed: _saveNote,
         ),
         actions: [
+          // Deshacer
+          IconButton(
+            icon: Icon(
+              Icons.undo,
+              color: _undoHistory.length >= 2 ? Colors.white70 : Colors.white24,
+            ),
+            tooltip: 'Deshacer',
+            onPressed: _undoHistory.length >= 2 ? _undo : null,
+          ),
+          // Copiar
           IconButton(
             icon: const Icon(Icons.copy_outlined, color: Colors.white70),
-            tooltip: 'Copiar al portapapeles',
-            onPressed: _shareNote,
+            tooltip: 'Copiar todo',
+            onPressed: _copyNote,
           ),
+          // Guardar
           IconButton(
             icon: const Icon(Icons.check, color: AppTheme.neonAccent),
             tooltip: 'Guardar',
@@ -142,9 +175,9 @@ class _EditNoteScreenState extends State<EditNoteScreen> {
               ),
               const SizedBox(height: 4),
               _buildColorPicker(),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               _buildTagsSection(),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               Expanded(
                 child: TextField(
                   controller: _contentController,
@@ -165,13 +198,9 @@ class _EditNoteScreenState extends State<EditNoteScreen> {
               // Contador de palabras y caracteres
               Padding(
                 padding: const EdgeInsets.only(bottom: 12.0),
-                child: Row(
-                  children: [
-                    Text(
-                      '$_wordCount palabras  ·  $_charCount caracteres',
-                      style: const TextStyle(color: Colors.white24, fontSize: 12),
-                    ),
-                  ],
+                child: Text(
+                  '$_wordCount palabras  ·  $_charCount caracteres',
+                  style: const TextStyle(color: Colors.white24, fontSize: 12),
                 ),
               ),
             ],
@@ -258,28 +287,25 @@ class _EditNoteScreenState extends State<EditNoteScreen> {
               );
             }).toList(),
           ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 36,
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _tagController,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
-                  decoration: const InputDecoration(
-                    hintText: 'Añadir etiqueta...',
-                    hintStyle: TextStyle(color: Colors.white24, fontSize: 13),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                    prefixIcon: Icon(Icons.tag, size: 16, color: Colors.white38),
-                    prefixIconConstraints: BoxConstraints(minWidth: 24, minHeight: 24),
-                  ),
-                  onSubmitted: _addTag,
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _tagController,
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+                decoration: const InputDecoration(
+                  hintText: 'Añadir etiqueta...',
+                  hintStyle: TextStyle(color: Colors.white24, fontSize: 13),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                  prefixIcon: Icon(Icons.tag, size: 16, color: Colors.white38),
+                  prefixIconConstraints: BoxConstraints(minWidth: 24, minHeight: 24),
                 ),
+                onSubmitted: _addTag,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
         const Divider(color: Colors.white10),
       ],

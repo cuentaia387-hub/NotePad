@@ -8,12 +8,14 @@ class NoteCard extends StatelessWidget {
   final Note note;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+  final Function(String tag)? onTagTap;
 
   const NoteCard({
     Key? key,
     required this.note,
     required this.onTap,
     required this.onLongPress,
+    this.onTagTap,
   }) : super(key: key);
 
   String _formatDate(DateTime date) {
@@ -42,7 +44,6 @@ class NoteCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Title row with pin indicator
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -78,38 +79,37 @@ class NoteCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 10),
-            // Tags row
+            // Tags - tappable to filter
             if (note.tags.isNotEmpty) ...[
               Wrap(
                 spacing: 6,
                 runSpacing: 4,
                 children: note.tags.take(2).map((tag) {
-                  return GlassContainer(
-                    borderRadius: 8.0,
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    blur: 5.0,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.tag, size: 10, color: AppTheme.neonAccent),
-                        const SizedBox(width: 2),
-                        Text(tag,
-                            style: const TextStyle(
-                                fontSize: 10, color: AppTheme.neonAccent)),
-                      ],
+                  return GestureDetector(
+                    onTap: () => onTagTap?.call(tag),
+                    child: GlassContainer(
+                      borderRadius: 8.0,
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      blur: 5.0,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.tag, size: 10, color: AppTheme.neonAccent),
+                          const SizedBox(width: 2),
+                          Text(tag,
+                              style: const TextStyle(
+                                  fontSize: 10, color: AppTheme.neonAccent)),
+                        ],
+                      ),
                     ),
                   );
                 }).toList(),
               ),
               const SizedBox(height: 8),
             ],
-            // Date
             Text(
               _formatDate(note.modifiedAt),
-              style: const TextStyle(
-                fontSize: 11,
-                color: Colors.white30,
-              ),
+              style: const TextStyle(fontSize: 11, color: Colors.white30),
             ),
           ],
         ),

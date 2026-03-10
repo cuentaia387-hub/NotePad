@@ -6,12 +6,20 @@ import '../providers/notes_provider.dart';
 import '../widgets/note_card.dart';
 import '../widgets/neon_fab.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/glass_toast.dart';
 import '../theme/app_theme.dart';
 import 'edit_note_screen.dart';
 import 'archive_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  String? _activeTagFilter;
 
   @override
   Widget build(BuildContext context) {
@@ -23,23 +31,43 @@ class HomeScreen extends StatelessWidget {
           children: [
             _buildHeader(context).animate().fade().slideY(begin: -0.2, end: 0),
             _buildSearchBar(context).animate().fade(delay: 100.ms).slideY(begin: -0.1, end: 0),
+            if (_activeTagFilter != null) _buildActiveTagFilter(),
             Expanded(
               child: Consumer<NotesProvider>(
                 builder: (context, provider, child) {
-                  final pinnedNotes = provider.pinnedNotes;
-                  final unpinnedNotes = provider.unpinnedNotes;
+                  List pinnedNotes = provider.pinnedNotes;
+                  List unpinnedNotes = provider.unpinnedNotes;
 
-                  if (provider.allNotes.isEmpty) {
+                  // Apply tag filter if active
+                  if (_activeTagFilter != null) {
+                    pinnedNotes = pinnedNotes
+                        .where((n) => n.tags.contains(_activeTagFilter))
+                        .toList();
+                    unpinnedNotes = unpinnedNotes
+                        .where((n) => n.tags.contains(_activeTagFilter))
+                        .toList();
+                  }
+
+                  if (pinnedNotes.isEmpty && unpinnedNotes.isEmpty) {
                     return Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.note_add_outlined, size: 72, color: Colors.white12),
+                          Icon(
+                            _activeTagFilter != null
+                                ? Icons.label_off_outlined
+                                : Icons.note_add_outlined,
+                            size: 72,
+                            color: Colors.white12,
+                          ),
                           const SizedBox(height: 16),
-                          const Text(
-                            'Crea tu primera nota\npulsando el botón +',
+                          Text(
+                            _activeTagFilter != null
+                                ? 'No hay notas con esta etiqueta'
+                                : 'Crea tu primera nota\npulsando el botón +',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.white38, fontSize: 16),
+                            style: const TextStyle(
+                                color: Colors.white38, fontSize: 16),
                           ),
                         ],
                       ).animate().fade(duration: 400.ms),
@@ -69,7 +97,7 @@ class HomeScreen extends StatelessWidget {
                         ),
                         SliverPadding(
                           padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                          sliver: _buildNotesGrid(context, pinnedNotes),
+                          sliver: _buildNotesGrid(pinnedNotes),
                         ),
                       ],
                       if (unpinnedNotes.isNotEmpty) ...[
@@ -88,7 +116,7 @@ class HomeScreen extends StatelessWidget {
                         ),
                         SliverPadding(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
-                          sliver: _buildNotesGrid(context, unpinnedNotes),
+                          sliver: _buildNotesGrid(unpinnedNotes),
                         ),
                       ]
                     ],
@@ -105,13 +133,50 @@ class HomeScreen extends StatelessWidget {
             context,
             PageRouteBuilder(
               pageBuilder: (_, __, ___) => const EditNoteScreen(),
-              transitionsBuilder: (_, animation, __, child) {
-                return FadeTransition(opacity: animation, child: child);
-              },
+              transitionsBuilder: (_, animation, __, child) =>
+                  FadeTransition(opacity: animation, child: child),
               transitionDuration: const Duration(milliseconds: 300),
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildActiveTagFilter() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: Row(
+        children: [
+          GlassContainer(
+            borderRadius: 20,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            blur: 10,
+            color: AppTheme.neonAccent.withOpacity(0.1),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.tag, size: 14, color: AppTheme.neonAccent),
+                const SizedBox(width: 4),
+                Text(
+                  _activeTagFilter!,
+                  style: const TextStyle(
+                      color: AppTheme.neonAccent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => setState(() => _activeTagFilter = null),
+                  child: const Icon(Icons.close, size: 14, color: Colors.white54),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Text('Filtrado por etiqueta',
+              style: TextStyle(color: Colors.white38, fontSize: 12)),
+        ],
       ),
     );
   }
@@ -177,40 +242,140 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildNotesGrid(BuildContext context, List notes) {
+  Widget _buildNotesGrid(List notes) {
     return SliverMasonryGrid.count(
       crossAxisCount: 2,
       mainAxisSpacing: 12,
       crossAxisSpacing: 12,
       itemBuilder: (context, index) {
         final note = notes[index];
-        return Hero(
-          tag: 'note_${note.id}',
-          child: Material(
-            color: Colors.transparent,
-            child: NoteCard(
-              note: note,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  PageRouteBuilder(
-                    pageBuilder: (_, __, ___) => EditNoteScreen(note: note),
-                    transitionsBuilder: (_, animation, __, child) {
-                      return FadeTransition(opacity: animation, child: child);
-                    },
-                    transitionDuration: const Duration(milliseconds: 300),
-                  ),
-                );
-              },
-              onLongPress: () {
-                _showNoteOptions(context, note);
-              },
+        return Dismissible(
+          key: Key(note.id),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 20),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(Icons.delete_outline, color: Colors.redAccent),
+                SizedBox(height: 4),
+                Text('Eliminar',
+                    style: TextStyle(color: Colors.redAccent, fontSize: 11)),
+              ],
+            ),
+          ),
+          confirmDismiss: (_) async {
+            return await _confirmDelete(context, note.title);
+          },
+          onDismissed: (_) {
+            context.read<NotesProvider>().deleteNote(note.id);
+            GlassToast.show(
+              context,
+              message: 'Nota eliminada',
+              icon: Icons.delete_outline,
+              iconColor: Colors.redAccent,
+            );
+          },
+          child: Hero(
+            tag: 'note_${note.id}',
+            child: Material(
+              color: Colors.transparent,
+              child: NoteCard(
+                note: note,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    PageRouteBuilder(
+                      pageBuilder: (_, __, ___) => EditNoteScreen(note: note),
+                      transitionsBuilder: (_, animation, __, child) =>
+                          FadeTransition(opacity: animation, child: child),
+                      transitionDuration: const Duration(milliseconds: 300),
+                    ),
+                  );
+                },
+                onLongPress: () => _showNoteOptions(context, note),
+                onTagTap: (tag) => setState(() => _activeTagFilter = tag),
+              ),
             ),
           ),
         ).animate().scale(delay: (index * 50).ms, curve: Curves.easeOutBack);
       },
       childCount: notes.length,
     );
+  }
+
+  Future<bool> _confirmDelete(BuildContext context, String title) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => Dialog(
+            backgroundColor: Colors.transparent,
+            child: GlassContainer(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.delete_outline,
+                      color: Colors.redAccent, size: 40),
+                  const SizedBox(height: 12),
+                  const Text('¿Eliminar nota?',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Text(
+                    title.isNotEmpty ? '"$title"' : 'Esta nota se eliminará permanentemente.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white54, fontSize: 14),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => Navigator.pop(ctx, false),
+                          child: GlassContainer(
+                            borderRadius: 16,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: const Center(
+                              child: Text('Cancelar',
+                                  style: TextStyle(color: Colors.white70)),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => Navigator.pop(ctx, true),
+                          child: GlassContainer(
+                            borderRadius: 16,
+                            color: Colors.red.withOpacity(0.2),
+                            border: Border.all(
+                                color: Colors.redAccent.withOpacity(0.5)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: const Center(
+                              child: Text('Eliminar',
+                                  style: TextStyle(
+                                      color: Colors.redAccent,
+                                      fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                ],
+              ),
+            ),
+          ),
+        ) ??
+        false;
   }
 
   Widget _buildDrawer(BuildContext context) {
@@ -252,7 +417,7 @@ class HomeScreen extends StatelessWidget {
                     const SizedBox(height: 4),
                     Consumer<NotesProvider>(
                       builder: (context, provider, _) => Text(
-                        '${provider.allNotes.length} notas activas  ·  ${provider.archivedNotes.length} archivadas',
+                        '${provider.allNotes.length} activas  ·  ${provider.archivedNotes.length} archivadas',
                         style: const TextStyle(color: Colors.white38, fontSize: 12),
                       ),
                     ),
@@ -283,7 +448,8 @@ class HomeScreen extends StatelessWidget {
               const Spacer(),
               const Padding(
                 padding: EdgeInsets.all(24),
-                child: Text('v1.0.0', style: TextStyle(color: Colors.white24, fontSize: 12)),
+                child: Text('v1.1.0',
+                    style: TextStyle(color: Colors.white24, fontSize: 12)),
               ),
             ],
           ),
@@ -298,7 +464,6 @@ class HomeScreen extends StatelessWidget {
       leading: Icon(icon, color: Colors.white60),
       title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 16)),
       onTap: onTap,
-      hoverColor: Colors.white10,
     );
   }
 
@@ -367,24 +532,43 @@ class HomeScreen extends StatelessWidget {
               onTap: () {
                 context.read<NotesProvider>().togglePin(note.id);
                 Navigator.pop(context);
+                GlassToast.show(
+                  context,
+                  message: note.isPinned ? 'Nota desfijada' : 'Nota fijada arriba',
+                  icon: Icons.push_pin,
+                );
               },
             ),
             ListTile(
               leading: const Icon(Icons.archive_outlined, color: Colors.white),
-              title: const Text('Archivar nota',
-                  style: TextStyle(color: Colors.white)),
+              title: Text(note.isArchived ? 'Desarchivar' : 'Archivar',
+                  style: const TextStyle(color: Colors.white)),
               onTap: () {
                 context.read<NotesProvider>().toggleArchive(note.id);
                 Navigator.pop(context);
+                GlassToast.show(
+                  context,
+                  message: 'Nota archivada',
+                  icon: Icons.archive_outlined,
+                );
               },
             ),
             ListTile(
               leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
               title: const Text('Eliminar',
                   style: TextStyle(color: Colors.redAccent)),
-              onTap: () {
-                context.read<NotesProvider>().deleteNote(note.id);
+              onTap: () async {
                 Navigator.pop(context);
+                final confirm = await _confirmDelete(context, note.title);
+                if (confirm) {
+                  context.read<NotesProvider>().deleteNote(note.id);
+                  GlassToast.show(
+                    context,
+                    message: 'Nota eliminada',
+                    icon: Icons.delete_outline,
+                    iconColor: Colors.redAccent,
+                  );
+                }
               },
             ),
           ],
